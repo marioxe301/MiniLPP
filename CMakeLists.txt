@@ -6,6 +6,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set (LEXER_SRC "${PROJECT_SOURCE_DIR}/lexer.l")
 set (PARSER_SRC "${PROJECT_SOURCE_DIR}/parser.y")
+set (TRECC_SRC "${PROJECT_SOURCE_DIR}/ast.tc" )
+
+# Run Trecc to generate the AST
+add_custom_command(
+    OUTPUT ast.h ast.cpp
+    COMMAND treecc -o ast.cpp -h ast.h ${TRECC_SRC}
+    MAIN_DEPENDENCY ${TRECC_SRC}
+)
 
 # Run flex to generate the lexer
 add_custom_command (
@@ -21,11 +29,11 @@ add_custom_command (
     MAIN_DEPENDENCY ${PARSER_SRC}
 )
 
-# Run Treecc to generate the ast
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${PROJECT_SOURCE_DIR})
 
 add_executable(${PROJECT_NAME}  expr_lexer.cpp
                                 expr_parser.cpp
+                                ast.cpp
                                 main.cpp)

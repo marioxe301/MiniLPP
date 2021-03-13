@@ -1,0 +1,465 @@
+%option lang = "C++"
+%option namespace = "Ast"
+
+%decls %{
+    #include <string>
+    #include <iostream>
+    #include <unordered_map>
+    #include <vector>
+    #include <cmath>
+    #include <algorithm>
+    #include <sstream>
+    namespace Ast{ class Expr; }
+    using list = std::vector<Ast::Expr*>;
+    using _string = std::string;
+
+%}
+
+
+%{
+    #include "ast.h"
+    int label_decl_index = 0;
+    int temp_decl_index = 0;
+
+    // Declaraciones
+    std::vector<std::string>var_decl_list;
+    
+    int str_decl_index = 0;
+    std::vector<std::string>str_decl_list;
+
+    int reg_list_index = 0;
+    std::vector<std::string>reg_list {"eax","ebx","ecx","edx"};
+
+    //Funciones
+    _string getNewReg(){
+        return reg_list[reg_list_index++];
+    }
+
+    _string getActualReg(){
+        return reg_list[reg_list_index];
+    }
+
+    void freeReg(){
+        if(reg_list_index) reg_list_index--;
+    }
+
+    _string newStringName(){
+        return "Str"+std::to_string(str_decl_index++);
+    }
+
+    _string newLabel(){
+        return "L"+std::to_string(label_decl_index++);
+    }
+
+    _string newTemp(){
+        return "dword[esp+"+std::to_string(temp_decl_index++*4)+"]";
+    }
+
+    _string cleanTemporalStack(){
+        std::string temp = "add esp , "+std::to_string(temp_decl_index*4);
+        temp_decl_index=0;
+        return temp;
+    }
+
+    _string reserveStackSpace(){
+        return "sub esp , "+std::to_string(temp_decl_index*4);
+    }
+
+    void addVarToList(_string id){
+        auto it = std::find(var_decl_list.begin(),var_decl_list.end(),id);
+        if(it == var_decl_list.end()){
+            var_decl_list.push_back(id);
+        }
+    }
+
+%}
+
+
+// =====================================
+// Seccion de las Declaraciones de Nodos
+// =====================================
+
+%node Expr %abstract %typedef = {
+    %nocreate _string place;
+    %nocreate _string asm_code;
+}
+%node BinaryExpr Expr %abstract ={
+    Expr * expr1;
+    Expr * expr2;
+}
+
+%node UnaryExpr Expr %abstract = {
+    Expr * expr1;
+}
+
+%node AddExpr BinaryExpr
+%node SubExpr BinaryExpr
+%node MultExpr BinaryExpr
+%node DivExpr BinaryExpr
+
+%node OrExpr BinaryExpr
+%node EqualExpr BinaryExpr
+%node DiffExpr BinaryExpr
+%node LessThanExpr BinaryExpr
+%node LessThanEqExpr BinaryExpr
+%node GreaterThanExpr BinaryExpr
+%node GreaterThanEqExpr BinaryExpr
+%node AndExpr BinaryExpr
+%node ModExpr BinaryExpr
+%node PowExpr BinaryExpr
+%node NotExpr UnaryExpr
+
+// ===================================
+// Unicamente para poder limpiar la pila 
+// despues de las operaciones ( ExprDecl )
+// ==================================
+
+%node ExprDecl Expr = {
+    Expr *expr1;
+}
+
+%node NumberExpr Expr = {
+    int val;
+}
+
+%node VarExpr Expr = {
+    _string id;
+}
+
+%node CharExpr Expr = {
+    char val;
+}
+
+%node BoolExpr Expr = {
+    bool val;
+}
+
+%node StringLiteral Expr = {
+    _string msg;
+}
+
+%operation void generate_code(Expr*e)
+
+
+// ==========================
+// Seccion de las Expresiones
+// ==========================
+
+generate_code(AddExpr){
+    generate_code(e->expr1);
+    generate_code(e->expr2);
+
+    e->place = newTemp();
+
+    std::ostringstream out;
+
+    out << e->expr1->asm_code << "\n"
+        << e->expr2->asm_code << "\n"
+        << "mov eax, " << e->expr1->place << "\n"
+        << "mov ebx, " <<e->expr2->place << "\n"
+        << "add eax, ebx\n"
+        << "mov " << e->place << ", eax\n";
+    
+    e->asm_code = out.str();
+
+}
+generate_code(SubExpr){
+    generate_code(e->expr1);
+    generate_code(e->expr2);
+    
+    e->place = newTemp();
+
+    std::ostringstream out;
+
+    out << e->expr1->asm_code << "\n"
+        << e->expr2->asm_code << "\n"
+        << "mov eax, " << e->expr1->place << "\n"
+        << "mov ebx, " <<e->expr2->place << "\n"
+        << "sub eax, ebx\n"
+        << "mov " << e->place << ", eax\n";
+    
+    e->asm_code = out.str();
+}
+generate_code(MultExpr){
+    generate_code(e->expr1);
+    generate_code(e->expr2);
+
+    e->place = newTemp();
+
+    std::ostringstream out;
+
+    out << e->expr1->asm_code << "\n"
+        << e->expr2->asm_code << "\n"
+        << "mov eax, " <<e->expr2->place << "\n"
+        << "mult "<< e->expr1->place << "\n"
+        << "mov "<< e->place << ", eax\n";
+    
+    e->asm_code = out.str();
+}
+generate_code(DivExpr){
+    generate_code(e->expr1);
+    generate_code(e->expr2);
+
+    e->place = newTemp();
+
+    std::ostringstream out;
+    
+    out << e->expr1->asm_code << "\n"
+        << e->expr2->asm_code << "\n"
+        << "mov eax, "<<e->expr1->place <<"\n"
+        << "mov edx, 0\n"
+        << "div "<< e->expr2->place << "\n"
+        << "mov "<< e->place << ", eax\n";
+    
+    e->asm_code = out.str();
+}
+generate_code(OrExpr){
+    generate_code(e->expr1);
+    generate_code(e->expr2);
+    std::string label_true = newLabel();
+    std::string label_end = newLabel();
+    e->place = newTemp();
+
+    std::ostringstream out;
+
+    out << e->expr1->asm_code <<"\n"
+        << e->expr2->asm_code << "\n"
+        << "cmp "<<e->expr1->place<<" , 1\n"
+        << "je "<< label_true << "\n"
+        << "cmp "<<e->expr2->place<<" , 1\n"
+        << "je "<< label_true << "\n"
+        << "mov "<< e->place << " , 0\n"
+        << "jmp "<< label_end << "\n"
+        << label_true << ":\n"
+        << "mov "<< e->place << " , 1\n"
+        << label_end << ":\n";
+    
+    e->asm_code = out.str();
+}
+generate_code(EqualExpr){
+    generate_code(e->expr1);
+    generate_code(e->expr2);
+
+    e->place = newTemp();
+
+    std::ostringstream out;
+
+    out << e->expr1->asm_code << "\n"
+        << e->expr2->asm_code << "\n"
+        << "mov eax, "<< e->expr1->place << "\n"
+        << "cmp eax, "<< e->expr2->place << "\n"
+        << "mov eax, 0\n"
+        << "sete al\n"
+        << "mov "<< e->place << ", eax\n";
+    e->asm_code = out.str();
+  
+}
+generate_code(DiffExpr){
+    generate_code(e->expr1);
+    generate_code(e->expr2);
+    e->place = newTemp();
+
+    std::ostringstream out;
+
+    out << e->expr1->asm_code << "\n"
+        << e->expr2->asm_code << "\n"
+        << "mov eax, "<< e->expr1->place << "\n"
+        << "cmp eax, "<< e->expr2->place << "\n"
+        << "mov eax, 0\n"
+        << "setne al\n"
+        << "mov "<< e->place << ", eax\n";
+    e->asm_code = out.str();
+  
+}
+generate_code(LessThanExpr){
+    generate_code(e->expr1);
+    generate_code(e->expr2);
+    e->place = newTemp();
+
+    std::ostringstream out;
+
+    out << e->expr1->asm_code << "\n"
+        << e->expr2->asm_code << "\n"
+        << "mov eax, "<< e->expr1->place << "\n"
+        << "cmp eax, "<< e->expr2->place << "\n"
+        << "mov eax, 0\n"
+        << "setl al\n"
+        << "mov "<< e->place << ", eax\n";
+    e->asm_code = out.str();
+    
+}
+generate_code(LessThanEqExpr){
+    generate_code(e->expr1);
+    generate_code(e->expr2);
+    e->place = newTemp();
+
+    std::ostringstream out;
+
+    out << e->expr1->asm_code << "\n"
+        << e->expr2->asm_code << "\n"
+        << "mov eax, "<< e->expr1->place << "\n"
+        << "cmp eax, "<< e->expr2->place << "\n"
+        << "mov eax, 0\n"
+        << "setle al\n"
+        << "mov "<< e->place << ", eax\n";
+    e->asm_code = out.str();
+    
+}
+generate_code(GreaterThanExpr){
+    generate_code(e->expr1);
+    generate_code(e->expr2);
+    e->place = newTemp();
+
+    std::ostringstream out;
+
+    out << e->expr1->asm_code << "\n"
+        << e->expr2->asm_code << "\n"
+        << "mov eax, "<< e->expr1->place << "\n"
+        << "cmp eax, "<< e->expr2->place << "\n"
+        << "mov eax, 0\n"
+        << "setg al\n"
+        << "mov "<< e->place << ", eax\n";
+    e->asm_code = out.str();
+}
+generate_code(GreaterThanEqExpr){
+    generate_code(e->expr1);
+    generate_code(e->expr2);
+    e->place = newTemp();
+
+    std::ostringstream out;
+
+    out << e->expr1->asm_code << "\n"
+        << e->expr2->asm_code << "\n"
+        << "mov eax, "<< e->expr1->place << "\n"
+        << "cmp eax, "<< e->expr2->place << "\n"
+        << "mov eax, 0\n"
+        << "setge al\n"
+        << "mov "<< e->place << ", eax\n";
+    e->asm_code = out.str();
+    
+}
+generate_code(AndExpr){
+    generate_code(e->expr1);
+    generate_code(e->expr2);
+
+    std::string label_false = newLabel();
+    std::string label_end = newLabel();
+    e->place = newTemp();
+
+    std::ostringstream out;
+
+    out << e->expr1->asm_code <<"\n"
+        << e->expr2->asm_code << "\n"
+        << "cmp "<<e->expr1->place<<" , 0\n"
+        << "je "<< label_false << "\n"
+        << "cmp "<<e->expr2->place<<" , 0\n"
+        << "je "<< label_false << "\n"
+        << "mov "<< e->place << " , 1\n"
+        << "jmp "<< label_end << "\n"
+        << label_false << ":\n"
+        << "mov "<< e->place << " , 0\n"
+        << label_end << ":\n";
+    
+    e->asm_code = out.str();
+}
+generate_code(ModExpr){
+    generate_code(e->expr1);
+    generate_code(e->expr2);
+    e->place = newTemp();
+
+    std::ostringstream out;
+    
+    out << e->expr1->asm_code << "\n"
+        << e->expr2->asm_code << "\n"
+        << "mov eax, "<<e->expr1->place <<"\n"
+        << "mov edx, 0\n"
+        << "div "<< e->expr2->place << "\n"
+        << "mov "<< e->place << ", edx\n";
+    
+    e->asm_code = out.str();
+}
+generate_code(PowExpr){
+    generate_code(e->expr1);
+    generate_code(e->expr2);
+
+    e->place = newTemp();
+
+    std::string label_start = newLabel();
+    std::string label_end = newLabel();
+
+    std::ostringstream out;
+
+    out << e->expr1->asm_code << "\n"
+        << e->expr2->asm_code << "\n"
+        << "mov ecx , " << e->expr2->place << "\n"
+        << label_start << ":\n"
+        << "cmp ecx , 1\n"
+        << "je "<< label_end <<"\n"
+        << "mov eax, "<< e->expr1->place << "\n"
+        << "mul "<< e->expr1->place<< "\n"
+        << "mov "<< e->place <<", eax\n"
+        << "dec ecx\n"
+        << "jmp "<< label_start << "\n"
+        << label_end << ":\n";
+
+    e->asm_code = out.str();
+}
+
+generate_code(NotExpr){
+    
+    generate_code(e->expr1);
+
+    e->place = newTemp();
+    
+    std::string label_invert = newLabel();
+    std::string label_end = newLabel();
+
+    std::ostringstream out;
+
+    out << e->expr1->asm_code << "\n"
+        << "cmp "<< e->expr1->place << ", 0\n"
+        << "je " << label_invert << "\n"
+        << "mov "<< e->place << ", 0\n"
+        << "jmp "<< label_end << "\n"
+        << label_invert << ":\n"
+        << "mov "<< e->place << ", 1\n"
+        << label_end << ":\n";
+    
+    e->asm_code = out.str();
+}
+generate_code(NumberExpr){
+    e->place = newTemp();
+    e->asm_code = "mov " + e->place + ", " + std::to_string(e->val);
+}
+generate_code(CharExpr){
+    
+}
+generate_code(BoolExpr){
+    e->place = newTemp();
+    e->asm_code = "mov " + e->place + ", " + std::to_string(e->val);
+}
+
+generate_code(ExprDecl){
+    generate_code(e->expr1);
+
+    std::ostringstream out;
+
+    out << reserveStackSpace() << "\n"
+        << e->expr1->asm_code << "\n"
+        << cleanTemporalStack() << "\n";
+    
+    e->asm_code = out.str();
+}
+
+generate_code(VarExpr){
+    addVarToList(e->id);
+    e->asm_code="";
+    e->place = "dword["+e->id+"]";
+}
+generate_code(StringLiteral){
+    
+}
+
+// =========================
+// Seccion de los Statements
+// =========================
