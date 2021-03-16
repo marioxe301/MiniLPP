@@ -1,1 +1,20 @@
-( a = 1 ) * 10
+Entero a,b,c
+Booleano e
+Arreglo [5] De Entero x
+inicio
+    x[0] <- 1
+    x[1] <- 2
+    x[2] <- 3
+    x[3] <- 4
+    x[4] <- 5
+    x[5] <- 6
+    a <- 5 + 5
+    b <- 10
+    c <- b + 10
+    e <- (a = b) 
+    Escriba "El resultado de A es ", a
+    Escriba "El resultado de B es ", b
+    Escriba "El resultado de C es ", c + c
+    Escriba "A es igual a B " , e
+    Escriba "Los elementos de x son " , x[0] ," ", x[1] ," ", x[2] ," ", x[3] ," ", x[4]
+fin

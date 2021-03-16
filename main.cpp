@@ -7,7 +7,9 @@
 
 extern Expr::Parser::token_type yylex(Expr::Parser::semantic_type *yylval);
 extern char *yytext;
-extern std::vector<std::string>var_decl_list;
+extern std::vector<std::tuple<std::string,int>>var_decl_list;
+extern std::vector<std::string>str_decl_list;
+extern std::vector<std::tuple<std::string,int>>arr_decl_list;
  
 void ExecuteLexer();
 void ExecuteParser();
@@ -48,16 +50,15 @@ void ExecuteParser(){
     Expr::Parser p(root);
     try
     {
-       p.parse();
+        p.parse();
+        Ast::generate_code(root);
+        std::cout<< GenerateTemplate() << root->asm_code << std::endl;
     }
     catch(const std::string& e)
     {
         std::cerr << e << '\n';
+        return;
     }
-    
-    Ast::generate_code(root);
-
-    std::cout<< GenerateTemplate() << root->asm_code << std::endl;
 
 }
 
@@ -66,12 +67,32 @@ _string GenerateTemplate(){
 
     out << "extern printf\n"
         << "global main\n"
-        << "section .data\n";
+        << "section .data\n"
+        << "    d_f dd '%d' , 0\n"
+        << "    s_f dd '%s' , 0\n"
+        << "    c_f dd '%c' , 0\n"
+        << "    eol_f dd '%s' , 10 , 0\n"
+        << "    endl dd 10\n"
+        << "    true dd 'Verdadero'\n"
+        << "    false dd 'Falso'\n";
+
     
     for (int i = 0; i < var_decl_list.size(); i++)
     {
-        out << "    "<< var_decl_list[i] << " dd 0\n";
+        out << "    "<< std::get<0>(var_decl_list[i]) << " dd 0\n";
     }
+
+    for (int i = 0; i < arr_decl_list.size() ; i++)
+    {
+        out << "    "<< std::get<0>(arr_decl_list[i]) << " times "<< std::get<1>(arr_decl_list[i]) << " dd 0\n";
+    }
+    
+
+    for (int i = 0; i < str_decl_list.size(); i++)
+    {
+        out << "    Str"<< std::to_string(i) << " dd " <<"'"<< str_decl_list[i]<<"'"<< "\n";
+    }
+    
 
     out << "section .text\n"
         << "main:\n";

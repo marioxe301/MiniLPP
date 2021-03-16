@@ -9,8 +9,19 @@
     #include <cmath>
     #include <algorithm>
     #include <sstream>
+    #include <tuple>
+
+    #define CHAR_TYPE 0
+    #define BOOL_TYPE 1
+    #define INT_TYPE 2
+    #define ARRAY_TYPE 3
     namespace Ast{ class Expr; }
     using list = std::vector<Ast::Expr*>;
+
+    using vars_decl = std::unordered_map<int,std::vector<std::string>>;
+    using array_size = std::vector<Ast::Expr*>;
+    using string_l = std::vector<std::string>; 
+
     using _string = std::string;
 
 %}
@@ -22,7 +33,8 @@
     int temp_decl_index = 0;
 
     // Declaraciones
-    std::vector<std::string>var_decl_list;
+    std::vector<std::tuple<std::string,int>>var_decl_list;
+    std::vector<std::tuple<std::string,int>>arr_decl_list;
     
     int str_decl_index = 0;
     std::vector<std::string>str_decl_list;
@@ -31,6 +43,10 @@
     std::vector<std::string>reg_list {"eax","ebx","ecx","edx"};
 
     //Funciones
+    void addStringToList(_string msg){
+        str_decl_list.push_back(msg);
+    }
+
     _string getNewReg(){
         return reg_list[reg_list_index++];
     }
@@ -65,11 +81,37 @@
         return "sub esp , "+std::to_string(temp_decl_index*4);
     }
 
-    void addVarToList(_string id){
-        auto it = std::find(var_decl_list.begin(),var_decl_list.end(),id);
-        if(it == var_decl_list.end()){
-            var_decl_list.push_back(id);
+    void addArrToList(_string id,int size){
+        auto it = std::find_if(arr_decl_list.begin(),arr_decl_list.end(),[id](auto e){ return std::get<0>(e) == id; });
+        if(it == arr_decl_list.end()){
+            arr_decl_list.push_back(std::make_tuple(id,size));
         }
+    }
+
+    int getArrSize(_string id){
+        auto it = std::find_if(arr_decl_list.begin(),arr_decl_list.end(),[id](auto e){ return std::get<0>(e) == id; });
+        if(it != arr_decl_list.end()){
+            return std::get<1>(*it);
+        }else{
+            throw std::string("No array found");
+        }
+    }
+
+    void addVarToList(_string id, int var_type){
+        auto it = std::find_if(var_decl_list.begin(),var_decl_list.end(),[id](auto e){ return std::get<0>(e) == id; });
+        if(it == var_decl_list.end()){
+            var_decl_list.push_back(std::make_tuple(id,var_type));
+        }
+    }
+
+    int findVarType(_string id){
+        auto it = std::find_if(var_decl_list.begin(),var_decl_list.end(),[id](auto e){ return std::get<0>(e) == id; });
+        if(it != var_decl_list.end()){
+            return std::get<1>(*it);
+        }else{
+            throw std::string("No variable Found");
+        }
+        return 0;
     }
 
 %}
@@ -82,6 +124,8 @@
 %node Expr %abstract %typedef = {
     %nocreate _string place;
     %nocreate _string asm_code;
+    %nocreate int type;
+    %nocreate int value;
 }
 %node BinaryExpr Expr %abstract ={
     Expr * expr1;
@@ -109,14 +153,69 @@
 %node PowExpr BinaryExpr
 %node NotExpr UnaryExpr
 
-// ===================================
-// Unicamente para poder limpiar la pila 
-// despues de las operaciones ( ExprDecl )
-// ==================================
+// ==================
+// Print Nodes Start
+// ==================
 
-%node ExprDecl Expr = {
+%node PrintArgList Expr ={
+    list args;
+}
+
+%node PrintStmt Expr = {
+    Expr *args;
+}
+
+// ==================
+// Print Nodes End
+// ==================
+
+%node SeqStmt Expr = {
+    list seq;
+}
+
+%node WhileStmt Expr = {
+    Expr *cond;
+    Expr *block;
+}
+
+%node DoWhileStmt Expr = {
+    Expr *block;
+    Expr *cond;
+}
+
+%node IfStmt Expr = {
+    Expr *cond;
+    Expr *true_block;
+    Expr *false_block;
+}
+
+%node AssignStmt Expr ={
+    _string id;
     Expr *expr1;
 }
+%node ArrAssignStmt Expr = {
+    _string id;
+    Expr *index;
+    Expr *expr1;
+}
+
+// ==================
+// Program Nodes Start
+// ==================
+
+%node ProgramDeclStmt Expr = {
+    Expr * vars_decl;
+    Expr * sub_prog_decl;
+    Expr * stmt_list;
+}
+
+%node VarDeclStmt Expr = {
+    vars_decl vars; 
+    Expr *arr_size;
+}
+// ===================
+// Program Nodes End
+// ===================
 
 %node NumberExpr Expr = {
     int val;
@@ -124,6 +223,11 @@
 
 %node VarExpr Expr = {
     _string id;
+}
+
+%node VarArrayExpr Expr = {
+    _string id;
+    Expr * index;
 }
 
 %node CharExpr Expr = {
@@ -149,6 +253,12 @@ generate_code(AddExpr){
     generate_code(e->expr1);
     generate_code(e->expr2);
 
+    if(e->expr1->type == INT_TYPE && e->expr2->type == INT_TYPE){
+        e->type = INT_TYPE;
+    }else{
+        throw std::string("Invalid type for operation");
+    }
+
     e->place = newTemp();
 
     std::ostringstream out;
@@ -166,6 +276,12 @@ generate_code(AddExpr){
 generate_code(SubExpr){
     generate_code(e->expr1);
     generate_code(e->expr2);
+
+    if(e->expr1->type == INT_TYPE && e->expr2->type == INT_TYPE){
+        e->type = INT_TYPE;
+    }else{
+        throw std::string("Invalid type for operation");
+    }
     
     e->place = newTemp();
 
@@ -184,6 +300,12 @@ generate_code(MultExpr){
     generate_code(e->expr1);
     generate_code(e->expr2);
 
+    if(e->expr1->type == INT_TYPE && e->expr2->type == INT_TYPE){
+        e->type = INT_TYPE;
+    }else{
+        throw std::string("Invalid type for operation");
+    }
+
     e->place = newTemp();
 
     std::ostringstream out;
@@ -199,6 +321,12 @@ generate_code(MultExpr){
 generate_code(DivExpr){
     generate_code(e->expr1);
     generate_code(e->expr2);
+
+    if(e->expr1->type == INT_TYPE && e->expr2->type == INT_TYPE){
+        e->type = INT_TYPE;
+    }else{
+        throw std::string("Invalid type for operation");
+    }
 
     e->place = newTemp();
 
@@ -220,6 +348,12 @@ generate_code(OrExpr){
     std::string label_end = newLabel();
     e->place = newTemp();
 
+    if(e->expr1->type == BOOL_TYPE && e->expr2->type == BOOL_TYPE){
+        e->type = BOOL_TYPE;
+    }else{
+        throw std::string("Invalid type for operation");
+    }
+
     std::ostringstream out;
 
     out << e->expr1->asm_code <<"\n"
@@ -240,6 +374,12 @@ generate_code(EqualExpr){
     generate_code(e->expr1);
     generate_code(e->expr2);
 
+    if(e->expr1->type == INT_TYPE && e->expr2->type == INT_TYPE){
+        e->type = BOOL_TYPE;
+    }else{
+        throw std::string("Invalid type for operation");
+    }
+
     e->place = newTemp();
 
     std::ostringstream out;
@@ -257,6 +397,13 @@ generate_code(EqualExpr){
 generate_code(DiffExpr){
     generate_code(e->expr1);
     generate_code(e->expr2);
+
+    if(e->expr1->type == INT_TYPE && e->expr2->type == INT_TYPE){
+        e->type = BOOL_TYPE;
+    }else{
+        throw std::string("Invalid type for operation");
+    }
+
     e->place = newTemp();
 
     std::ostringstream out;
@@ -274,6 +421,13 @@ generate_code(DiffExpr){
 generate_code(LessThanExpr){
     generate_code(e->expr1);
     generate_code(e->expr2);
+
+    if(e->expr1->type == INT_TYPE && e->expr2->type == INT_TYPE){
+        e->type = BOOL_TYPE;
+    }else{
+        throw std::string("Invalid type for operation");
+    }
+
     e->place = newTemp();
 
     std::ostringstream out;
@@ -291,6 +445,13 @@ generate_code(LessThanExpr){
 generate_code(LessThanEqExpr){
     generate_code(e->expr1);
     generate_code(e->expr2);
+
+    if(e->expr1->type == INT_TYPE && e->expr2->type == INT_TYPE){
+        e->type = BOOL_TYPE;
+    }else{
+        throw std::string("Invalid type for operation");
+    }
+
     e->place = newTemp();
 
     std::ostringstream out;
@@ -308,6 +469,13 @@ generate_code(LessThanEqExpr){
 generate_code(GreaterThanExpr){
     generate_code(e->expr1);
     generate_code(e->expr2);
+
+    if(e->expr1->type == INT_TYPE && e->expr2->type == INT_TYPE){
+        e->type = BOOL_TYPE;
+    }else{
+        throw std::string("Invalid type for operation");
+    }
+    
     e->place = newTemp();
 
     std::ostringstream out;
@@ -324,6 +492,13 @@ generate_code(GreaterThanExpr){
 generate_code(GreaterThanEqExpr){
     generate_code(e->expr1);
     generate_code(e->expr2);
+
+    if(e->expr1->type == INT_TYPE && e->expr2->type == INT_TYPE){
+        e->type = BOOL_TYPE;
+    }else{
+        throw std::string("Invalid type for operation");
+    }
+
     e->place = newTemp();
 
     std::ostringstream out;
@@ -341,6 +516,12 @@ generate_code(GreaterThanEqExpr){
 generate_code(AndExpr){
     generate_code(e->expr1);
     generate_code(e->expr2);
+
+    if(e->expr1->type == BOOL_TYPE && e->expr2->type == BOOL_TYPE){
+        e->type = BOOL_TYPE;
+    }else{
+        throw std::string("Invalid type for operation");
+    }
 
     std::string label_false = newLabel();
     std::string label_end = newLabel();
@@ -365,6 +546,13 @@ generate_code(AndExpr){
 generate_code(ModExpr){
     generate_code(e->expr1);
     generate_code(e->expr2);
+
+    if(e->expr1->type == INT_TYPE && e->expr2->type == INT_TYPE){
+        e->type = INT_TYPE;
+    }else{
+        throw std::string("Invalid type for operation");
+    }
+
     e->place = newTemp();
 
     std::ostringstream out;
@@ -381,6 +569,12 @@ generate_code(ModExpr){
 generate_code(PowExpr){
     generate_code(e->expr1);
     generate_code(e->expr2);
+
+    if(e->expr1->type == INT_TYPE && e->expr2->type == INT_TYPE){
+        e->type = INT_TYPE;
+    }else{
+        throw std::string("Invalid type for operation");
+    }
 
     e->place = newTemp();
 
@@ -409,6 +603,12 @@ generate_code(NotExpr){
     
     generate_code(e->expr1);
 
+    if(e->expr1->type == BOOL_TYPE){
+        e->type = BOOL_TYPE;
+    }else{
+        throw std::string("Invalid type for operation");
+    }
+
     e->place = newTemp();
     
     std::string label_invert = newLabel();
@@ -429,37 +629,258 @@ generate_code(NotExpr){
 }
 generate_code(NumberExpr){
     e->place = newTemp();
-    e->asm_code = "mov " + e->place + ", " + std::to_string(e->val);
+    e->value = e->val;
+    e->asm_code = "mov " + e->place + ", " + std::to_string(e->value);
+    e->type = INT_TYPE;
 }
 generate_code(CharExpr){
-    
+    e->place = newTemp();
+    e->value = e->val;
+    e->asm_code = "mov " + e->place + ", "+std::to_string(e->value);
+    e->type = CHAR_TYPE;
 }
 generate_code(BoolExpr){
     e->place = newTemp();
-    e->asm_code = "mov " + e->place + ", " + std::to_string(e->val);
+    e->value = e->val;
+    e->asm_code = "mov " + e->place + ", " + std::to_string(e->value);
+    e->type = BOOL_TYPE;
 }
 
-generate_code(ExprDecl){
-    generate_code(e->expr1);
-
-    std::ostringstream out;
-
-    out << reserveStackSpace() << "\n"
-        << e->expr1->asm_code << "\n"
-        << cleanTemporalStack() << "\n";
-    
-    e->asm_code = out.str();
-}
 
 generate_code(VarExpr){
-    addVarToList(e->id);
     e->asm_code="";
     e->place = "dword["+e->id+"]";
+    e->type = findVarType(e->id);
 }
 generate_code(StringLiteral){
-    
+    e->place = newStringName();
+    e->asm_code = "";
+    addStringToList(e->msg);
+}
+
+generate_code(VarArrayExpr){
+    generate_code(e->index);
+    int max_size = getArrSize(e->id);
+    if(e->index->value > max_size) throw std::string("Index out of bounds");
+    e->type = INT_TYPE;
+    e->place = "dword["+e->id+"+"+std::to_string(e->index->value)+"*4]\n";
+    e->asm_code = "";
 }
 
 // =========================
 // Seccion de los Statements
 // =========================
+
+generate_code(PrintStmt){
+    generate_code(e->args);
+
+    std::ostringstream out;
+
+    out << e->args->asm_code << "\n"
+        << "push endl\n"
+        << "push eol_f\n"
+        << "call printf\n"
+        << "add esp, 8\n";
+    e->asm_code = out.str();
+}
+
+generate_code(SeqStmt){
+    for (auto &&i : e->seq)
+    {
+        generate_code(i);
+        e->asm_code+=i->asm_code;
+    }
+}
+
+generate_code(PrintArgList){
+    std::ostringstream out;
+    for (auto &&i : e->args)
+    {
+        generate_code(i);
+        if(i->isA(StringLiteral_kind)){
+            out << i->asm_code << "\n"
+                << "push " << i->place << "\n"
+                << "push s_f\n"
+                << "call printf\n"
+                << "add esp,8\n";
+        }else if(i->isA(CharExpr_kind)){
+            out << reserveStackSpace() << "\n"
+                << i->asm_code << "\n"
+                << "push " << i->place << "\n"
+                << "push c_f\n"
+                << "call printf\n"
+                << "add esp, 8\n"
+                << cleanTemporalStack() << "\n";
+        }else if(i->isA(BoolExpr_kind)){
+                std::string print_false = newLabel();
+                std::string print_end = newLabel();
+                
+                out << reserveStackSpace() << "\n"
+                    << i->asm_code << "\n"
+                    << "cmp "<< i->place << ", 0\n"
+                    << "je "<< print_false << "\n"
+                    << "push true\n"
+                    << "push s_f\n"
+                    << "call printf\n"
+                    << "add esp , 8\n"
+                    << "jmp " << print_end << "\n"
+                    << print_false << ":\n"
+                    << "push false\n"
+                    << "push s_f\n"
+                    << "call printf\n"
+                    << "add esp , 8\n"
+                    << print_end << ":\n"
+                    << cleanTemporalStack() << "\n";
+        }else if(i->isA(VarExpr_kind)){
+            if(i->type == CHAR_TYPE){
+                out << reserveStackSpace() << "\n"
+                << i->asm_code << "\n"
+                << "push " << i->place << "\n"
+                << "push c_f\n"
+                << "call printf\n"
+                << "add esp, 8\n"
+                << cleanTemporalStack() << "\n";
+            }else if(i->type == BOOL_TYPE){
+                std::string print_false = newLabel();
+                std::string print_end = newLabel();
+
+                out << reserveStackSpace() << "\n"
+                    << i->asm_code << "\n"
+                    << "cmp "<< i->place << ", 0\n"
+                    << "je "<< print_false << "\n"
+                    << "push true\n"
+                    << "push s_f\n"
+                    << "call printf\n"
+                    << "add esp , 8\n"
+                    << "jmp " << print_end << "\n"
+                    << print_false << ":\n"
+                    << "push false\n"
+                    << "push s_f\n"
+                    << "call printf\n"
+                    << "add esp , 8\n"
+                    << print_end << ":\n"
+                    << cleanTemporalStack() << "\n";
+            }else{
+                out << reserveStackSpace() << "\n"
+                    << i->asm_code << "\n"
+                    << "push "<< i->place << "\n"
+                    << "push d_f\n"
+                    << "call printf\n"
+                    << "add esp, 8\n"
+                    << cleanTemporalStack() << "\n";
+            }
+        }else{
+            out << reserveStackSpace() << "\n"
+                << i->asm_code << "\n"
+                << "push "<< i->place << "\n"
+                << "push d_f\n"
+                << "call printf\n"
+                << "add esp, 8\n"
+                << cleanTemporalStack() << "\n";
+        }
+    }
+
+    e->asm_code = out.str();
+}
+generate_code(ProgramDeclStmt){
+    std::ostringstream out;
+    if(e->vars_decl != nullptr){
+        generate_code(e->vars_decl);
+        out<< e->vars_decl->asm_code << "\n";
+    }
+    if(e->sub_prog_decl != nullptr){
+        generate_code(e->sub_prog_decl);
+        out<< e->sub_prog_decl->asm_code << "\n";
+    }
+    generate_code(e->stmt_list);
+    out<< e->stmt_list->asm_code << "\n";
+
+    e->asm_code = out.str();
+}
+
+generate_code(VarDeclStmt){
+    for(int i = 0; i < e->vars[INT_TYPE].size();i++){
+        addVarToList(e->vars[INT_TYPE][i],INT_TYPE);
+    }
+
+    for(int i = 0; i < e->vars[BOOL_TYPE].size();i++){
+        addVarToList(e->vars[BOOL_TYPE][i],BOOL_TYPE);
+    }
+
+    for(int i = 0; i < e->vars[CHAR_TYPE].size();i++){
+        addVarToList(e->vars[CHAR_TYPE][i],CHAR_TYPE);
+    }
+
+    for(int i = 0; i < e->vars[ARRAY_TYPE].size();i++){
+        generate_code(e->arr_size);
+        cleanTemporalStack();
+        addArrToList(e->vars[ARRAY_TYPE][i],e->arr_size->value);
+    }
+
+    e->asm_code = "";
+}
+
+generate_code(AssignStmt){
+    int type_t = findVarType(e->id);
+    generate_code(e->expr1);
+    std::ostringstream out;
+
+    if(e->expr1->type == BOOL_TYPE && type_t == BOOL_TYPE){
+        out << reserveStackSpace() << "\n"
+        << e->expr1->asm_code << "\n"
+        << "mov eax, "<< e->expr1->place << "\n"
+        << "mov dword["+e->id+"]" << ", eax\n"
+        << cleanTemporalStack() << "\n";
+    }else if(e->expr1->type == CHAR_TYPE && type_t == CHAR_TYPE){
+        out << reserveStackSpace() << "\n"
+        << e->expr1->asm_code << "\n"
+        << "mov eax, "<< e->expr1->place << "\n"
+        << "mov dword["+e->id+"]" << ", eax\n"
+        << cleanTemporalStack() << "\n";
+    }else if(e->expr1->type == INT_TYPE && type_t == INT_TYPE){
+        out << reserveStackSpace() << "\n"
+        << e->expr1->asm_code << "\n"
+        << "mov eax, "<< e->expr1->place << "\n"
+        << "mov dword["+e->id+"]" << ", eax\n"
+        << cleanTemporalStack() << "\n";
+    }else{
+        throw std::string("Variable Error Type");
+    }
+
+    
+    e->asm_code = out.str();
+}
+
+generate_code(ArrAssignStmt){
+    int max_size = getArrSize(e->id);
+    std::ostringstream out;
+    generate_code(e->index);
+    if(e->index->value > max_size) throw std::string("Index out of bounds");
+    generate_code(e->expr1);
+
+    std::string _place = "dword["+e->id+"+"+std::to_string(e->index->value)+"*4]";
+
+    if(e->expr1->type == INT_TYPE){
+        out << reserveStackSpace() << "\n"
+            << e->expr1->asm_code << "\n"
+            << "mov eax, " << e->expr1->place << "\n"
+            << "mov " << _place << ", eax\n"
+            << cleanTemporalStack() << "\n";
+    }else{
+        throw std::string("Variable Error Type");
+    }
+
+    e->asm_code = out.str();
+}
+
+generate_code(WhileStmt){
+
+}
+
+generate_code(DoWhileStmt){
+
+}
+
+generate_code(IfStmt){
+    
+}
