@@ -66,6 +66,7 @@ _string GenerateTemplate(){
     std::ostringstream out;
 
     out << "extern printf\n"
+        << "extern exit\n"
         << "global main\n"
         << "section .data\n"
         << "    d_f dd '%d' , 0\n"

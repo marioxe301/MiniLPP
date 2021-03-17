@@ -12,6 +12,9 @@ if nasm -gdwarf -f elf32 $1; then
 	exec="${exec}.o"
 	if gcc -m32 $exec -o ${EXE}; then
 		echo "${green}Compiled${reset}"
+		mv $1 ./tests/asm/
+		mv ${EXE} ./tests/bin/
+		rm ${exec}
 	else
 		echo "${red}Error to Compile with C"
 	fi

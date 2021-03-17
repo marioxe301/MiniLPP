@@ -195,8 +195,8 @@ print_arg_list: print_arg_list Coma expr {
 
 if_stmt: SiKw expr opt_EoL EntoncesKw opt_EoL stmt_list else_if_stmt FinKw SiKw { $$ = new Ast::IfStmt($2,$6,$7);}
 
-else_if_stmt: SinoKw else_if_stmt_cont { $$ = $1;} 
-            | %empty { $4 = nullptr;}
+else_if_stmt: SinoKw else_if_stmt_cont { $$ = $2;} 
+            | %empty { $$ = nullptr;}
 
 else_if_stmt_cont: SiKw expr opt_EoL EntoncesKw opt_EoL stmt_list else_if_stmt { $$ = new Ast::IfStmt($2,$6,$7);}
 

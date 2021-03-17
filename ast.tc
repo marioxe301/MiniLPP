@@ -793,7 +793,8 @@ generate_code(ProgramDeclStmt){
         out<< e->sub_prog_decl->asm_code << "\n";
     }
     generate_code(e->stmt_list);
-    out<< e->stmt_list->asm_code << "\n";
+    out << e->stmt_list->asm_code << "\n"
+        << "push 0\ncall exit\n";
 
     e->asm_code = out.str();
 }
@@ -874,11 +875,55 @@ generate_code(ArrAssignStmt){
 }
 
 generate_code(WhileStmt){
+    generate_code(e->cond);
 
+
+    if(e->cond->type != BOOL_TYPE) throw std::string("Only Boolean expresion loop");
+    std::ostringstream out;
+
+    std::string start_label = newLabel();
+    std::string end_label = newLabel();
+
+    out << reserveStackSpace() << "\n"
+        << start_label << ":\n"
+        << e->cond->asm_code << "\n"
+        << "cmp " << e->cond->place << ", 0\n"
+        << "je " << end_label << "\n"
+        << cleanTemporalStack() << "\n";
+    
+    generate_code(e->block);
+
+    out << e->block->asm_code << "\n"
+        << "jmp " << start_label << "\n"
+        << end_label << ":\n";
+
+    e->asm_code = out.str();
 }
 
 generate_code(DoWhileStmt){
+    generate_code(e->block);
 
+    std::ostringstream out;
+
+    std::string start_label = newLabel();
+    std::string end_label = newLabel();
+
+    out << start_label << ":\n"
+        << e->block->asm_code << "\n";
+    
+    generate_code(e->cond);
+    if(e->cond->type != BOOL_TYPE) throw std::string("Only Boolean expresion in loop");
+
+    out << reserveStackSpace() << "\n"
+        << e->cond->asm_code << "\n"
+        << "cmp " << e->cond->place << ", 0\n"
+        << "je " << end_label << "\n"
+        << cleanTemporalStack() << "\n"
+        << "jmp " << start_label << "\n"
+        << end_label << ":\n";
+
+
+    e->asm_code = out.str();
 }
 
 generate_code(IfStmt){
