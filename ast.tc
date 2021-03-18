@@ -35,6 +35,7 @@
     // Declaraciones
     std::vector<std::tuple<std::string,int>>var_decl_list;
     std::vector<std::tuple<std::string,int>>arr_decl_list;
+    std::vector<std::tuple<std::string,std::string>>for_var_list;
     
     int str_decl_index = 0;
     std::vector<std::string>str_decl_list;
@@ -101,6 +102,36 @@
         auto it = std::find_if(var_decl_list.begin(),var_decl_list.end(),[id](auto e){ return std::get<0>(e) == id; });
         if(it == var_decl_list.end()){
             var_decl_list.push_back(std::make_tuple(id,var_type));
+        }
+    }
+
+    void addForVarToList(_string id, _string place){
+        auto it = std::find_if(for_var_list.begin(),for_var_list.end(),[id](auto e){ return std::get<0>(e) == id;});
+        if( it == for_var_list.end()){
+            for_var_list.push_back(std::make_tuple(id,place));
+        }
+    }
+
+    bool isAForVar(_string id){
+        auto it = std::find_if(for_var_list.begin(),for_var_list.end(),[id](auto e){ return std::get<0>(e) == id;});
+        if( it != for_var_list.end()){
+            return true;
+        }
+        return false;
+    }
+
+    _string getForVarPlace(_string id){
+        auto it = std::find_if(for_var_list.begin(),for_var_list.end(),[id](auto e){ return std::get<0>(e) == id;});
+        if(it != for_var_list.end()){
+            return std::get<1>(*it);
+        }
+        throw std::string("For variable not found");
+    }
+
+    void deleteForVar(_string id){
+        auto it = std::find_if(for_var_list.begin(),for_var_list.end(),[id](auto e){ return std::get<0>(e) == id;});
+        if(it != for_var_list.end()){
+            for_var_list.erase(it);
         }
     }
 
@@ -188,6 +219,14 @@
     Expr *true_block;
     Expr *false_block;
 }
+
+%node ForStmt Expr = {
+    _string id;
+    Expr *index;
+    Expr *max_val;
+    Expr *stmt;
+}
+
 
 %node AssignStmt Expr ={
     _string id;
@@ -313,7 +352,7 @@ generate_code(MultExpr){
     out << e->expr1->asm_code << "\n"
         << e->expr2->asm_code << "\n"
         << "mov eax, " <<e->expr2->place << "\n"
-        << "mult "<< e->expr1->place << "\n"
+        << "mul "<< e->expr1->place << "\n"
         << "mov "<< e->place << ", eax\n";
     
     e->asm_code = out.str();
@@ -587,7 +626,7 @@ generate_code(PowExpr){
         << e->expr2->asm_code << "\n"
         << "mov ecx , " << e->expr2->place << "\n"
         << label_start << ":\n"
-        << "cmp ecx , 1\n"
+        << "cmp ecx , 0\n"
         << "je "<< label_end <<"\n"
         << "mov eax, "<< e->expr1->place << "\n"
         << "mul "<< e->expr1->place<< "\n"
@@ -648,9 +687,15 @@ generate_code(BoolExpr){
 
 
 generate_code(VarExpr){
-    e->asm_code="";
-    e->place = "dword["+e->id+"]";
-    e->type = findVarType(e->id);
+    if(!isAForVar(e->id)){
+        e->asm_code="";
+        e->place = "dword["+e->id+"]";
+        e->type = findVarType(e->id);
+    }else{
+        e->asm_code="";
+        e->place = getForVarPlace(e->id);
+        e->type = INT_TYPE;
+    }
 }
 generate_code(StringLiteral){
     e->place = newStringName();
@@ -704,19 +749,17 @@ generate_code(PrintArgList){
                 << "call printf\n"
                 << "add esp,8\n";
         }else if(i->isA(CharExpr_kind)){
-            out << reserveStackSpace() << "\n"
-                << i->asm_code << "\n"
+            out << i->asm_code << "\n"
                 << "push " << i->place << "\n"
                 << "push c_f\n"
                 << "call printf\n"
-                << "add esp, 8\n"
-                << cleanTemporalStack() << "\n";
+                << "add esp, 8\n";
         }else if(i->isA(BoolExpr_kind)){
                 std::string print_false = newLabel();
                 std::string print_end = newLabel();
                 
-                out << reserveStackSpace() << "\n"
-                    << i->asm_code << "\n"
+                
+                out << i->asm_code << "\n"
                     << "cmp "<< i->place << ", 0\n"
                     << "je "<< print_false << "\n"
                     << "push true\n"
@@ -729,23 +772,20 @@ generate_code(PrintArgList){
                     << "push s_f\n"
                     << "call printf\n"
                     << "add esp , 8\n"
-                    << print_end << ":\n"
-                    << cleanTemporalStack() << "\n";
+                    << print_end << ":\n";
         }else if(i->isA(VarExpr_kind)){
             if(i->type == CHAR_TYPE){
-                out << reserveStackSpace() << "\n"
-                << i->asm_code << "\n"
+    
+            out << i->asm_code << "\n"
                 << "push " << i->place << "\n"
                 << "push c_f\n"
                 << "call printf\n"
-                << "add esp, 8\n"
-                << cleanTemporalStack() << "\n";
+                << "add esp, 8\n";
             }else if(i->type == BOOL_TYPE){
                 std::string print_false = newLabel();
                 std::string print_end = newLabel();
 
-                out << reserveStackSpace() << "\n"
-                    << i->asm_code << "\n"
+                out << i->asm_code << "\n"
                     << "cmp "<< i->place << ", 0\n"
                     << "je "<< print_false << "\n"
                     << "push true\n"
@@ -758,25 +798,22 @@ generate_code(PrintArgList){
                     << "push s_f\n"
                     << "call printf\n"
                     << "add esp , 8\n"
-                    << print_end << ":\n"
-                    << cleanTemporalStack() << "\n";
+                    << print_end << ":\n";
             }else{
-                out << reserveStackSpace() << "\n"
-                    << i->asm_code << "\n"
+                
+                out << i->asm_code << "\n"
                     << "push "<< i->place << "\n"
                     << "push d_f\n"
                     << "call printf\n"
-                    << "add esp, 8\n"
-                    << cleanTemporalStack() << "\n";
+                    << "add esp, 8\n";
             }
         }else{
-            out << reserveStackSpace() << "\n"
-                << i->asm_code << "\n"
+            
+            out << i->asm_code << "\n"
                 << "push "<< i->place << "\n"
                 << "push d_f\n"
                 << "call printf\n"
-                << "add esp, 8\n"
-                << cleanTemporalStack() << "\n";
+                << "add esp, 8\n";
         }
     }
 
@@ -784,17 +821,22 @@ generate_code(PrintArgList){
 }
 generate_code(ProgramDeclStmt){
     std::ostringstream out;
+    std::ostringstream opt_out;
     if(e->vars_decl != nullptr){
         generate_code(e->vars_decl);
-        out<< e->vars_decl->asm_code << "\n";
+        opt_out<< e->vars_decl->asm_code << "\n";
     }
     if(e->sub_prog_decl != nullptr){
         generate_code(e->sub_prog_decl);
-        out<< e->sub_prog_decl->asm_code << "\n";
+        opt_out<< e->sub_prog_decl->asm_code << "\n";
     }
+    
     generate_code(e->stmt_list);
-    out << e->stmt_list->asm_code << "\n"
-        << "push 0\ncall exit\n";
+    out << reserveStackSpace() << "\n"
+        << opt_out.str()
+        << e->stmt_list->asm_code << "\n"
+        << cleanTemporalStack() << "\n"
+        << "ret";
 
     e->asm_code = out.str();
 }
@@ -814,7 +856,7 @@ generate_code(VarDeclStmt){
 
     for(int i = 0; i < e->vars[ARRAY_TYPE].size();i++){
         generate_code(e->arr_size);
-        cleanTemporalStack();
+        //cleanTemporalStack();
         addArrToList(e->vars[ARRAY_TYPE][i],e->arr_size->value);
     }
 
@@ -827,23 +869,17 @@ generate_code(AssignStmt){
     std::ostringstream out;
 
     if(e->expr1->type == BOOL_TYPE && type_t == BOOL_TYPE){
-        out << reserveStackSpace() << "\n"
-        << e->expr1->asm_code << "\n"
-        << "mov eax, "<< e->expr1->place << "\n"
-        << "mov dword["+e->id+"]" << ", eax\n"
-        << cleanTemporalStack() << "\n";
+        out << e->expr1->asm_code << "\n"
+            << "mov eax, "<< e->expr1->place << "\n"
+            << "mov dword["+e->id+"]" << ", eax\n";
     }else if(e->expr1->type == CHAR_TYPE && type_t == CHAR_TYPE){
-        out << reserveStackSpace() << "\n"
-        << e->expr1->asm_code << "\n"
-        << "mov eax, "<< e->expr1->place << "\n"
-        << "mov dword["+e->id+"]" << ", eax\n"
-        << cleanTemporalStack() << "\n";
+        out << e->expr1->asm_code << "\n"
+            << "mov eax, "<< e->expr1->place << "\n"
+            << "mov dword["+e->id+"]" << ", eax\n";
     }else if(e->expr1->type == INT_TYPE && type_t == INT_TYPE){
-        out << reserveStackSpace() << "\n"
-        << e->expr1->asm_code << "\n"
-        << "mov eax, "<< e->expr1->place << "\n"
-        << "mov dword["+e->id+"]" << ", eax\n"
-        << cleanTemporalStack() << "\n";
+        out << e->expr1->asm_code << "\n"
+            << "mov eax, "<< e->expr1->place << "\n"
+            << "mov dword["+e->id+"]" << ", eax\n";
     }else{
         throw std::string("Variable Error Type");
     }
@@ -862,11 +898,9 @@ generate_code(ArrAssignStmt){
     std::string _place = "dword["+e->id+"+"+std::to_string(e->index->value)+"*4]";
 
     if(e->expr1->type == INT_TYPE){
-        out << reserveStackSpace() << "\n"
-            << e->expr1->asm_code << "\n"
+        out << e->expr1->asm_code << "\n"
             << "mov eax, " << e->expr1->place << "\n"
-            << "mov " << _place << ", eax\n"
-            << cleanTemporalStack() << "\n";
+            << "mov " << _place << ", eax\n";
     }else{
         throw std::string("Variable Error Type");
     }
@@ -884,12 +918,10 @@ generate_code(WhileStmt){
     std::string start_label = newLabel();
     std::string end_label = newLabel();
 
-    out << reserveStackSpace() << "\n"
-        << start_label << ":\n"
+    out << start_label << ":\n"
         << e->cond->asm_code << "\n"
         << "cmp " << e->cond->place << ", 0\n"
-        << "je " << end_label << "\n"
-        << cleanTemporalStack() << "\n";
+        << "je " << end_label << "\n";
     
     generate_code(e->block);
 
@@ -914,11 +946,10 @@ generate_code(DoWhileStmt){
     generate_code(e->cond);
     if(e->cond->type != BOOL_TYPE) throw std::string("Only Boolean expresion in loop");
 
-    out << reserveStackSpace() << "\n"
-        << e->cond->asm_code << "\n"
+    
+    out << e->cond->asm_code << "\n"
         << "cmp " << e->cond->place << ", 0\n"
         << "je " << end_label << "\n"
-        << cleanTemporalStack() << "\n"
         << "jmp " << start_label << "\n"
         << end_label << ":\n";
 
@@ -927,5 +958,60 @@ generate_code(DoWhileStmt){
 }
 
 generate_code(IfStmt){
-    
+   generate_code(e->cond);
+   generate_code(e->true_block);
+   
+   std::ostringstream out;
+
+    if(e->false_block != nullptr){
+        generate_code(e->false_block);
+
+    std::string else_label = newLabel();
+    std::string end_label = newLabel();
+
+        out << e->cond->asm_code << "\n"
+            << "cmp "<<e->cond->place << ", 0\n"
+            << "je " << else_label << "\n"
+            << e->true_block->asm_code << "\n"
+            << "jmp " << end_label << "\n"
+            << else_label << ":\n"
+            << e->false_block->asm_code << "\n"
+            << end_label << ":\n";
+    }else{
+        std::string end_label = newLabel();
+        out << e->cond->asm_code << "\n"
+            << "cmp " << e->cond->place << ", 0\n"
+            << "je " << end_label << "\n"
+            << e->true_block->asm_code << "\n"
+            << end_label << ":\n";
+   }
+
+    e->asm_code = out.str();
+}
+
+generate_code(ForStmt){
+    generate_code(e->index);
+    generate_code(e->max_val);
+
+    int max_cond = e->max_val->value;
+
+    std::string start_label = newLabel();
+    std::string end_label = newLabel();
+    std::ostringstream out;
+
+    // Despues de agregar la variable llamamos al stmt por si llega usar la variable dentro
+    addForVarToList(e->id,e->index->place);
+    generate_code(e->stmt);
+
+    out << e->index->asm_code << "\n"
+        << start_label << ":\n"
+        << "cmp " << e->index->place << ", " << std::to_string(max_cond) << "\n"
+        << "jg " << end_label << "\n"
+        << e->stmt->asm_code << "\n"
+        << "inc " << e->index->place << "\n"
+        << "jmp " << start_label << "\n"
+        << end_label << ":\n";
+
+    deleteForVar(e->id);
+    e->asm_code = out.str();
 }

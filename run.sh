@@ -8,6 +8,3 @@ if [ $# -ne 1 ]; then
 fi
 cd tests/bin
 ( ./$1 ) 2> /dev/null
-if [ $? -ne 0 ]; then
-    echo "${red}Executable File Not Found${reset}"
-fi

@@ -1,0 +1,8 @@
+Booleano x
+
+Inicio
+    x <- ( 1 = 1 ) y Verdadero
+    Escriba x
+    x <- Falso
+    Escriba x
+Fin

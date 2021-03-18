@@ -158,7 +158,7 @@ stmt: LlamarKw Identifier
     | Identifier OpenBrack numeric_type CloseBrack Assign expr { $$ = new Ast::ArrAssignStmt($1,$3,$6);}
     | if_stmt { $$ = $1; }
     | MientrasKw expr opt_EoL HagaKw EoL stmt_list FinKw MientrasKw { $$ = new Ast::WhileStmt($2,$6);}
-    | ParaKw Identifier Assign expr HastaKw expr HagaKw EoL stmt_list FinKw ParaKw
+    | ParaKw Identifier Assign expr HastaKw expr HagaKw EoL stmt_list FinKw ParaKw { $$ = new Ast::ForStmt($2,$4,$6,$9); }
     | RepitaKw EoL stmt_list HastaKw expr { $$ = new Ast::DoWhileStmt($3,$5);}
     | RetorneKw opt_expr
 

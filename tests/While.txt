@@ -2,7 +2,7 @@ Entero i
 
 Inicio
     i <- 1
-    Mientras i <= 100 Haga
+    Mientras i <= 10 Haga
         Escriba i
         i <- i + 1
     Fin Mientras

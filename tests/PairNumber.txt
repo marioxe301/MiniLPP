@@ -1,0 +1,16 @@
+Entero a
+Inicio
+    a <- 10
+    Mientras a <> 0 Haga
+        Si ( a mod 2) = 0 Entonces
+            Escriba a 
+        Fin Si
+        a <- a - 1 
+    Fin Mientras
+    Escriba " "
+    Para i <- 1 Hasta 10 Haga
+        Si ( i mod 2) = 0 Entonces
+            Escriba i 
+        Fin Si
+    Fin Para
+Fin

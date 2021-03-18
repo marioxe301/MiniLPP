@@ -47,3 +47,4 @@ build/
 .history/
 
 tests/bin/
+tests/asm/
