@@ -22,6 +22,8 @@ vars_decl vars;
 string_l ids;
 Ast::Expr* arr_size;
 
+
+
 namespace Expr{
     void Parser::error(const std::string&msj){
         throw msj+ std::string("  Line -> ") + std::to_string(yylineno);
@@ -95,6 +97,7 @@ namespace Expr{
 %type<Ast::Expr*> expr rel term pow neg factor numeric_type
 %type<Ast::Expr*> program opt_var_decl opt_subprogram_decl stmt_list stmt print_arg_list
 %type<Ast::Expr*> if_stmt else_if_stmt else_if_stmt_cont
+%type<Ast::Expr*> subprogram_decl opt_func_args func_arg_list subprogram_call opt_expr_list expr_list
 
 %type<int> type
 
@@ -104,7 +107,7 @@ input: program { root = $1; }
 program: opt_var_decl opt_subprogram_decl InicioKw opt_EoL stmt_list FinKw opt_EoL { $$ = new Ast::ProgramDeclStmt($1,$2,$5); }
 
 opt_var_decl: var_decl EoL { $$ = new Ast::VarDeclStmt(vars,arr_size); }
-            | %empty
+            | %empty { $$= nullptr; }
 
 var_decl: var_decl EoL type var_id_list { vars[$3] = ids; ids.clear(); }
         | type var_id_list { vars[$1] = ids; ids.clear(); }
@@ -116,31 +119,42 @@ type: EnteroKw { $$ = 2;}
     | CaracterKw  { $$ = 0; }
     | ArregloKw OpenBrack numeric_type CloseBrack DeKw EnteroKw { $$ = 3; arr_size = $3;}
 
-
-opt_subprogram_decl: subprograms_decl
+opt_subprogram_decl: subprogram_decl EoL { $$ = $1;}
                 | %empty { $$ = nullptr;}
 
-subprograms_decl: subprograms_decl subprogram_decl EoL
-                | subprogram_decl EoL
-
-subprogram_decl: FuncionKw Identifier opt_func_args Colon type EoL
+// solo voy a soportar funciones que retornen enteros
+subprogram_decl: FuncionKw Identifier opt_func_args Colon EnteroKw EoL
                 opt_var_decl
                 InicioKw opt_EoL
                 stmt_list
-                FinKw
+                FinKw { $$= new Ast::FunctionDecl($2,$3,$10); }
                 | ProcedimientoKw Identifier opt_func_args EoL
                 opt_var_decl
                 InicioKw opt_EoL
                 stmt_list
-                FinKw
+                FinKw { $$ = new Ast::ProcedureDecl($2,$3,$8); }
 
-opt_func_args: OpenPar func_arg_list ClosePar
-            | %empty
+opt_func_args: OpenPar func_arg_list ClosePar { $$ = $2;}
+            | %empty { $$ = nullptr;}
 
-func_arg_list: func_arg_list Coma type Identifier
-            | func_arg_list Coma VarKw type Identifier
-            | type Identifier
-            | VarKw type Identifier
+func_arg_list: func_arg_list Coma type Identifier   {
+                                                        $$ = $1;
+                                                        reinterpret_cast<Ast::FuncArgsDeclList*>($$)->args_list.push_back(std::make_tuple($4,"",$3,false));
+                                                    }
+            | func_arg_list Coma VarKw type Identifier  {
+                                                            $$ = $1;
+                                                            reinterpret_cast<Ast::FuncArgsDeclList*>($$)->args_list.push_back(std::make_tuple($5,"",$4,true));
+                                                        }
+            | type Identifier   {
+                                    func_arg arg;
+                                    arg.push_back(std::make_tuple($2,"",$1,false));
+                                    $$ = new Ast::FuncArgsDeclList(arg);
+                                }
+            | VarKw type Identifier     {
+                                            func_arg arg;
+                                            arg.push_back(std::make_tuple($3,"", $2,true));
+                                            $$ = new Ast::FuncArgsDeclList(arg);
+                                        }
 
 stmt_list: stmt_list stmt EoL { $$=$1; 
                                 reinterpret_cast<Ast::SeqStmt*>($$)->seq.push_back($2); 
@@ -151,8 +165,8 @@ stmt_list: stmt_list stmt EoL { $$=$1;
                      $$ = new Ast::SeqStmt(stmts);
                    }
 
-stmt: LlamarKw Identifier
-    | LlamarKw subprogram_call
+stmt: LlamarKw Identifier { $$ = new Ast::CallProcStmt($2,nullptr);}
+    | LlamarKw subprogram_call { $$ = $2;}
     | EscribaKw print_arg_list { $$ = new Ast::PrintStmt($2);}
     | Identifier Assign expr { $$ = new Ast::AssignStmt($1,$3); }
     | Identifier OpenBrack numeric_type CloseBrack Assign expr { $$ = new Ast::ArrAssignStmt($1,$3,$6);}
@@ -160,18 +174,22 @@ stmt: LlamarKw Identifier
     | MientrasKw expr opt_EoL HagaKw EoL stmt_list FinKw MientrasKw { $$ = new Ast::WhileStmt($2,$6);}
     | ParaKw Identifier Assign expr HastaKw expr HagaKw EoL stmt_list FinKw ParaKw { $$ = new Ast::ForStmt($2,$4,$6,$9); }
     | RepitaKw EoL stmt_list HastaKw expr { $$ = new Ast::DoWhileStmt($3,$5);}
-    | RetorneKw opt_expr
+    | RetorneKw expr { $$ = new Ast::ReturnStmt($2);}
 
-subprogram_call: Identifier OpenPar opt_expr_list ClosePar
+subprogram_call: Identifier OpenPar opt_expr_list ClosePar { $$ = new Ast::CallProcStmt($1,$3);}
 
-opt_expr: expr
-        | %empty
+opt_expr_list: expr_list  { $$ = $1;}
+            | %empty { $$ = nullptr;}
 
-opt_expr_list: expr_list 
-            | %empty
-
-expr_list: expr_list Coma expr
-        | expr
+expr_list: expr_list Coma expr  {
+                                    $$=$1;
+                                    reinterpret_cast<Ast::ArgsExprList*>($$)->args.push_back($3);
+                                }
+        | expr  {    
+                    list args;
+                    args.push_back($1);
+                    $$ = new Ast::ArgsExprList(args);
+                }
 
 
 print_arg_list: print_arg_list Coma expr {
@@ -234,13 +252,8 @@ factor: numeric_type { $$ = $1;}
     | FalsoKw { $$ = new Ast::BoolExpr(false);}
     | OpenPar expr ClosePar { $$ = $2;}
     | Identifier OpenBrack numeric_type CloseBrack { $$ = new Ast::VarArrayExpr($1,$3);} 
-    | Identifier OpenPar args_opt_list ClosePar { }
+    | Identifier OpenPar opt_expr_list ClosePar { $$ = new Ast::CallFuncStmt($1,$3); }
     ; 
-
-args_opt_list: args_opt_list Coma numeric_type
-            | numeric_type
-            | %empty
-            ;
 
 numeric_type: Decimal { $$ = new Ast::NumberExpr($1);}
             | Identifier { $$ = new Ast::VarExpr($1); }

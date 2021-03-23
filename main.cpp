@@ -1,4 +1,6 @@
 #include <iostream>
+#include <cstdio>
+#include <cstdlib>
 #include "tokens.h"
 #include "ast.h"
 
@@ -7,12 +9,13 @@
 
 extern Expr::Parser::token_type yylex(Expr::Parser::semantic_type *yylval);
 extern char *yytext;
+extern FILE *yyin;
 extern std::vector<std::tuple<std::string,int>>var_decl_list;
 extern std::vector<std::string>str_decl_list;
 extern std::vector<std::tuple<std::string,int>>arr_decl_list;
  
 void ExecuteLexer();
-void ExecuteParser();
+void ExecuteParser(char *&arg);
 _string GenerateTemplate();
 std::string TokenToString(Expr::Parser::token::yytokentype tk);
 
@@ -23,9 +26,9 @@ int main(int argc, char *argv[]){
         //std::cout<< "Ejecutando Lexer"<<std::endl<<std::endl;
         ExecuteLexer();
         
-    }else{
+    }else if(argc >= 2){
         //std::cout<< "Ejecutando Parser"<<std::endl<<std::endl;
-        ExecuteParser();
+        ExecuteParser(argv[1]);
     }
     return 0;
 }
@@ -45,7 +48,8 @@ void ExecuteLexer(){
     }
 }
 
-void ExecuteParser(){
+void ExecuteParser(char *&arg){
+    yyin = fopen(arg,"r");
     Ast::Expr*root;
     Expr::Parser p(root);
     try
@@ -72,8 +76,6 @@ _string GenerateTemplate(){
         << "    d_f dd '%d' , 0\n"
         << "    s_f dd '%s' , 0\n"
         << "    c_f dd '%c' , 0\n"
-        << "    eol_f dd '%s' , 10 , 0\n"
-        << "    endl dd 10\n"
         << "    true dd 'Verdadero'\n"
         << "    false dd 'Falso'\n";
 
@@ -94,9 +96,6 @@ _string GenerateTemplate(){
         out << "    Str"<< std::to_string(i) << " dd " <<"'"<< str_decl_list[i]<<"'"<< "\n";
     }
     
-
-    out << "section .text\n"
-        << "main:\n";
     return out.str();
 }
 

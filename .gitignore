@@ -48,3 +48,6 @@ build/
 
 tests/bin/
 tests/asm/
+
+#test folder
+Test_MiniLPP/

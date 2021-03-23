@@ -8,7 +8,7 @@ if [ $# -ne 2 ]; then
 fi
 
 echo "${green}Generating Asembly Code${reset}"
-( ./build/minilpp < $1 > $2 ) 2> /dev/null
+( ./build/minilpp $1 > $2 ) 2> /dev/null
 if [ $? -eq 0 ]; then
     echo "${green}Generated ${reset} $2 ${green}File${reset}"
 else

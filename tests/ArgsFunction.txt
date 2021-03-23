@@ -1,4 +1,3 @@
-
 Funcion Suma(Entero a, Entero b): Entero
 Inicio
     Retorne a + b

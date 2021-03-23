@@ -18,6 +18,9 @@
     namespace Ast{ class Expr; }
     using list = std::vector<Ast::Expr*>;
 
+    // [id] list(id , place , type , byreference )
+    using func_arg = std::vector<std::tuple<std::string ,std::string,int,bool>>;
+
     using vars_decl = std::unordered_map<int,std::vector<std::string>>;
     using array_size = std::vector<Ast::Expr*>;
     using string_l = std::vector<std::string>; 
@@ -32,32 +35,25 @@
     int label_decl_index = 0;
     int temp_decl_index = 0;
 
+    std::string ret_addr = "";
+
     // Declaraciones
     std::vector<std::tuple<std::string,int>>var_decl_list;
     std::vector<std::tuple<std::string,int>>arr_decl_list;
     std::vector<std::tuple<std::string,std::string>>for_var_list;
+    func_arg args_list;
+
+    // Para las funciones y procedimientos
     
     int str_decl_index = 0;
     std::vector<std::string>str_decl_list;
 
-    int reg_list_index = 0;
-    std::vector<std::string>reg_list {"eax","ebx","ecx","edx"};
+
+
 
     //Funciones
     void addStringToList(_string msg){
         str_decl_list.push_back(msg);
-    }
-
-    _string getNewReg(){
-        return reg_list[reg_list_index++];
-    }
-
-    _string getActualReg(){
-        return reg_list[reg_list_index];
-    }
-
-    void freeReg(){
-        if(reg_list_index) reg_list_index--;
     }
 
     _string newStringName(){
@@ -69,7 +65,8 @@
     }
 
     _string newTemp(){
-        return "dword[esp+"+std::to_string(temp_decl_index++*4)+"]";
+        int offset = 1;
+        return "dword[ebp+"+std::to_string((temp_decl_index++ + offset)*4)+"]";
     }
 
     _string cleanTemporalStack(){
@@ -120,6 +117,38 @@
         return false;
     }
 
+    bool isAFuncVar(_string id){
+        auto it = std::find_if(args_list.begin(),args_list.end(),[id](auto e){ return std::get<0>(e) == id;});
+        if( it != args_list.end()){
+            return true;
+        }
+        return false;
+    }
+
+    bool isArrayVar(_string id){
+        auto it = std::find_if(arr_decl_list.begin(),arr_decl_list.end(),[id](auto e){ return std::get<0>(e) == id;});
+        if( it != arr_decl_list.end()){
+            return true;
+        }
+        return false;
+    }
+
+    _string getFuncVarPlace(_string id){
+        auto it = std::find_if(args_list.begin(),args_list.end(),[id](auto e){ return std::get<0>(e) == id;});
+        if( it != args_list.end()){
+            return std::get<1>(*it);
+        }
+        throw std::string("Func variable not found");
+    }
+
+    int getFuncVarType(_string id){
+        auto it = std::find_if(args_list.begin(),args_list.end(),[id](auto e){ return std::get<0>(e) == id;});
+        if( it != args_list.end()){
+            return std::get<2>(*it);
+        }
+        throw std::string("Func variable not found");
+    }
+
     _string getForVarPlace(_string id){
         auto it = std::find_if(for_var_list.begin(),for_var_list.end(),[id](auto e){ return std::get<0>(e) == id;});
         if(it != for_var_list.end()){
@@ -157,6 +186,8 @@
     %nocreate _string asm_code;
     %nocreate int type;
     %nocreate int value;
+
+    %nocreate list expr_l;
 }
 %node BinaryExpr Expr %abstract ={
     Expr * expr1;
@@ -227,7 +258,6 @@
     Expr *stmt;
 }
 
-
 %node AssignStmt Expr ={
     _string id;
     Expr *expr1;
@@ -236,6 +266,24 @@
     _string id;
     Expr *index;
     Expr *expr1;
+}
+
+%node ReturnStmt Expr = {
+    Expr *expr1;
+}
+
+%node CallProcStmt Expr = {
+    _string id;
+    Expr *args;
+}
+
+%node CallFuncStmt Expr = {
+    _string id;
+    Expr *args;
+}
+
+%node ArgsExprList Expr = {
+    list args;
 }
 
 // ==================
@@ -252,6 +300,23 @@
     vars_decl vars; 
     Expr *arr_size;
 }
+
+%node FunctionDecl Expr = {
+    _string id;
+    Expr *args;
+    Expr *stmts;
+}
+
+%node ProcedureDecl Expr = {
+    _string id;
+    Expr *args;
+    Expr *stmts;
+}
+
+%node FuncArgsDeclList Expr = {
+    func_arg args_list;
+}
+
 // ===================
 // Program Nodes End
 // ===================
@@ -687,14 +752,22 @@ generate_code(BoolExpr){
 
 
 generate_code(VarExpr){
-    if(!isAForVar(e->id)){
-        e->asm_code="";
-        e->place = "dword["+e->id+"]";
-        e->type = findVarType(e->id);
-    }else{
+    if(isAForVar(e->id)){
         e->asm_code="";
         e->place = getForVarPlace(e->id);
         e->type = INT_TYPE;
+    }else if(isAFuncVar(e->id)){
+        e->asm_code="";
+        e->place = getFuncVarPlace(e->id);
+        e->type = getFuncVarType(e->id);
+    }else if(isArrayVar(e->id)){
+        e->asm_code="";
+        e->place = e->id;
+        e->type = ARRAY_TYPE;
+    }else{
+        e->asm_code="";
+        e->place = "dword["+e->id+"]";
+        e->type = findVarType(e->id);
     }
 }
 generate_code(StringLiteral){
@@ -721,11 +794,12 @@ generate_code(PrintStmt){
 
     std::ostringstream out;
 
-    out << e->args->asm_code << "\n"
-        << "push endl\n"
+    out << e->args->asm_code << "\n";
+/*        << "push endl\n"
         << "push eol_f\n"
         << "call printf\n"
         << "add esp, 8\n";
+*/
     e->asm_code = out.str();
 }
 
@@ -821,20 +895,26 @@ generate_code(PrintArgList){
 }
 generate_code(ProgramDeclStmt){
     std::ostringstream out;
-    std::ostringstream opt_out;
+
+    out << "section .text\n";
+
     if(e->vars_decl != nullptr){
         generate_code(e->vars_decl);
-        opt_out<< e->vars_decl->asm_code << "\n";
+        out<< e->vars_decl->asm_code << "\n";
     }
     if(e->sub_prog_decl != nullptr){
         generate_code(e->sub_prog_decl);
-        opt_out<< e->sub_prog_decl->asm_code << "\n";
+        out<< e->sub_prog_decl->asm_code << "\n";
     }
     
     generate_code(e->stmt_list);
-    out << reserveStackSpace() << "\n"
-        << opt_out.str()
+    out << "main:\n" 
+        << reserveStackSpace() << "\n"
+        << "push ebp\n"
+        << "mov ebp , esp\n"
         << e->stmt_list->asm_code << "\n"
+        << "mov esp , ebp\n"
+        << "pop ebp\n"
         << cleanTemporalStack() << "\n"
         << "ret";
 
@@ -864,26 +944,51 @@ generate_code(VarDeclStmt){
 }
 
 generate_code(AssignStmt){
-    int type_t = findVarType(e->id);
-    generate_code(e->expr1);
+
     std::ostringstream out;
+    if(isAFuncVar(e->id)){
+        int type_t = getFuncVarType(e->id);
+        e->place = getFuncVarPlace(e->id);
 
-    if(e->expr1->type == BOOL_TYPE && type_t == BOOL_TYPE){
-        out << e->expr1->asm_code << "\n"
-            << "mov eax, "<< e->expr1->place << "\n"
-            << "mov dword["+e->id+"]" << ", eax\n";
-    }else if(e->expr1->type == CHAR_TYPE && type_t == CHAR_TYPE){
-        out << e->expr1->asm_code << "\n"
-            << "mov eax, "<< e->expr1->place << "\n"
-            << "mov dword["+e->id+"]" << ", eax\n";
-    }else if(e->expr1->type == INT_TYPE && type_t == INT_TYPE){
-        out << e->expr1->asm_code << "\n"
-            << "mov eax, "<< e->expr1->place << "\n"
-            << "mov dword["+e->id+"]" << ", eax\n";
+        generate_code(e->expr1);
+
+        if(e->expr1->type == BOOL_TYPE && type_t == BOOL_TYPE){
+            out << e->expr1->asm_code << "\n"
+                << "mov eax, " << e->expr1->place << "\n"
+                << "mov " << e->place << ", eax \n";
+        }else if(e->expr1->type == CHAR_TYPE && type_t == CHAR_TYPE){
+            out << e->expr1->asm_code << "\n"
+                << "mov eax, " << e->expr1->place << "\n"
+                << "mov " << e->place << ", eax \n";
+        }else if(e->expr1->type == INT_TYPE && type_t == INT_TYPE){
+            out << e->expr1->asm_code << "\n"
+                << "mov eax, " << e->expr1->place << "\n"
+                << "mov " << e->place << ", eax \n";
+        }else{
+            throw std::string("Variable Error Type");
+        } 
+
     }else{
-        throw std::string("Variable Error Type");
-    }
+        int type_t = findVarType(e->id);
+        generate_code(e->expr1);
 
+        if(e->expr1->type == BOOL_TYPE && type_t == BOOL_TYPE){
+            out << e->expr1->asm_code << "\n"
+                << "mov eax, "<< e->expr1->place << "\n"
+                << "mov dword["+e->id+"]" << ", eax\n";
+        }else if(e->expr1->type == CHAR_TYPE && type_t == CHAR_TYPE){
+            out << e->expr1->asm_code << "\n"
+                << "mov eax, "<< e->expr1->place << "\n"
+                << "mov dword["+e->id+"]" << ", eax\n";
+        }else if(e->expr1->type == INT_TYPE && type_t == INT_TYPE){
+            out << e->expr1->asm_code << "\n"
+                << "mov eax, "<< e->expr1->place << "\n"
+                << "mov dword["+e->id+"]" << ", eax\n";
+        }else{
+            throw std::string("Variable Error Type");
+        }
+
+    }
     
     e->asm_code = out.str();
 }
@@ -948,7 +1053,7 @@ generate_code(DoWhileStmt){
 
     
     out << e->cond->asm_code << "\n"
-        << "cmp " << e->cond->place << ", 0\n"
+        << "cmp " << e->cond->place << ", 1\n"
         << "je " << end_label << "\n"
         << "jmp " << start_label << "\n"
         << end_label << ":\n";
@@ -1014,4 +1119,136 @@ generate_code(ForStmt){
 
     deleteForVar(e->id);
     e->asm_code = out.str();
+}
+
+generate_code(FunctionDecl){
+    std::ostringstream out;
+
+    std::string tag = e->id;
+    if(e->args!= nullptr){
+        generate_code(e->args);
+    }
+    generate_code(e->stmts);
+    out << tag << ":\n";
+    out << e->stmts->asm_code << "\n";
+    out << "ret \n";
+
+
+    e->asm_code = out.str();
+}
+
+generate_code(ProcedureDecl){
+    std::ostringstream out;
+    
+    std::string tag = e->id;
+    if(e->args!= nullptr){
+        generate_code(e->args);
+    }
+
+    generate_code(e->stmts);
+    out << tag << ":\n";
+    out << e->stmts->asm_code << "\n";
+    out << "ret \n";
+
+
+    e->asm_code = out.str();
+
+}
+
+generate_code(FuncArgsDeclList){
+    for(int i= 0; i < e->args_list.size(); i++){
+        std::get<1>(e->args_list[i]) = "dword[esp+" + std::to_string((i+1) * 4)+ "]";
+    }
+    args_list = e->args_list;
+    e->asm_code="";
+}
+
+generate_code(ReturnStmt){
+    std::ostringstream out;
+    e->place = newTemp();
+    ret_addr = e->place;
+    generate_code(e->expr1);
+
+    out << e->expr1->asm_code << "\n"
+        << "mov eax , "<< e->expr1->place << "\n"
+        << "mov " << e->place << ", eax\n"
+        << "ret\n";
+    
+    e->asm_code = out.str();
+}
+
+generate_code(CallProcStmt){
+    std::ostringstream out;
+    if( e->args != nullptr){
+        generate_code(e->args);
+        out << e->args->asm_code << "\n";
+        e->expr_l = e->args->expr_l ;
+    }
+
+    out << "call " << e->id << "\n";
+
+
+    // hacer pop de todos los elementos
+    for(int i=0; i < e->expr_l.size() ; i++){
+        if(!std::get<3>(args_list[i])){
+            out << "pop eax \n" ;   
+        }
+    }
+
+    for(int i=0; i < e->expr_l.size() ; i++){
+        if(!std::get<3>(args_list[i])){
+            out << "pop " << e->expr_l[i]->place << "\n"; 
+        }
+    }
+
+    e->asm_code = out.str();
+    
+}
+
+generate_code(ArgsExprList){
+    std::ostringstream out, rest, expr;
+    int j = 0;
+    for( auto &&i : e->args){
+        generate_code(i);
+        if(!std::get<3>(args_list[j])){
+            rest << "push " << i->place << "\n";
+        }
+        
+        if(std::get<2>(args_list[j]) == i->type){
+            out << "push " << i->place << "\n";
+        }else{
+            throw std::string("Invalid arg type");
+        }
+        expr << i->asm_code << "\n";
+        j++;
+    }
+
+    e->asm_code+= expr.str() + rest.str() + "\n"  + out.str() + "\n";
+    e->expr_l = e->args;
+}
+
+generate_code(CallFuncStmt){
+    std::ostringstream out;
+    if( e->args != nullptr){
+        generate_code(e->args);
+        out << e->args->asm_code << "\n";
+        e->expr_l = e->args->expr_l ;
+    }
+
+    out << "call " << e->id << "\n";
+
+    // hacer pop de todos los elementos
+    for(int i=0; i < e->expr_l.size() ; i++){
+        if(!std::get<3>(args_list[i])){
+            out << "pop eax \n" ;   
+        }
+    }
+
+    for(int i=0; i < e->expr_l.size() ; i++){
+        if(!std::get<3>(args_list[i])){
+            out << "pop " << e->expr_l[i]->place << "\n"; 
+        }
+    }
+    e->asm_code = out.str();
+    e->place = ret_addr;
 }
