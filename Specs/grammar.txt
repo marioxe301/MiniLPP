@@ -82,7 +82,7 @@ print_arg_list: print_arg_list Coma expr
 if_stmt: SiKw expr opt_EoL EntoncesKw opt_EoL stmt_list else_if_stmt FinKw SiKw
 
 else_if_stmt: SinoKw else_if_stmt_cont
-            | %empty
+            | %empty 
 
 else_if_stmt_cont: SiKw expr opt_EoL EntoncesKw opt_EoL stmt_list else_if_stmt
 

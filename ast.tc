@@ -1064,10 +1064,12 @@ generate_code(DoWhileStmt){
 
 generate_code(IfStmt){
    generate_code(e->cond);
+   if(e->cond->type != BOOL_TYPE) throw std::string("Only Boolean support");
    generate_code(e->true_block);
    
    std::ostringstream out;
 
+    
     if(e->false_block != nullptr){
         generate_code(e->false_block);
 
